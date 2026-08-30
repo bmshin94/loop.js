@@ -116,7 +116,7 @@ export function wrapperCommand(wrapper: string): TaskCommand {
 export function buildTaskXml(opts: { expr: string; dir: string; command: TaskCommand; until: Until }): string {
   const trigger = triggersXml(expr.schtasks.schedule(opts.expr)) // a refused expr throws before anything is installed
   const desc = `${DESC}${opts.expr} ${formatUntil(opts.until)}`
-  return `<?xml version="1.0" encoding="UTF-8"?>
+  return `<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo><Description>${xmlEscape(desc)}</Description></RegistrationInfo>
   ${trigger}
@@ -124,6 +124,11 @@ export function buildTaskXml(opts: { expr: string; dir: string; command: TaskCom
   <Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries><StartWhenAvailable>true</StartWhenAvailable><Enabled>true</Enabled></Settings>
   <Actions Context="Author"><Exec><Command>${xmlEscape(opts.command.exe)}</Command><Arguments>${xmlEscape(opts.command.args)}</Arguments><WorkingDirectory>${xmlEscape(opts.dir)}</WorkingDirectory></Exec></Actions>
 </Task>`
+}
+
+/** The exact bytes `schtasks /Create /XML` receives: UTF-16LE plus an explicit byte-order mark. */
+export function taskXmlBytes(xml: string): Buffer {
+  return Buffer.from(`\uFEFF${xml}`, "utf16le")
 }
 
 /** Recover `{ expr, dir, until }` from a task XML we wrote; null if it is not one of ours. */
@@ -176,7 +181,7 @@ export function systemSchtasks(): Schtasks {
       const dir = mkdtempSync(join(tmpdir(), "loop-cron-"))
       const file = join(dir, "task.xml")
       try {
-        writeFileSync(file, xml, "utf8")
+        writeFileSync(file, taskXmlBytes(xml))
         const r = run(["/Create", "/F", "/TN", taskPath, "/XML", file])
         if (r.status !== 0) throw bin.failure("schtasks create", r)
       } finally {

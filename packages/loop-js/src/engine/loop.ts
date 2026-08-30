@@ -15,7 +15,7 @@
  */
 
 import { rmSync } from "node:fs"
-import { join, resolve } from "node:path"
+import { isAbsolute, join, relative, resolve, sep } from "node:path"
 import type {
   PromptCtx,
   Exit,
@@ -55,10 +55,19 @@ const interrupt = (cause: InterruptCause, reason: string): Exit => ({ settled: f
 /** The one Verdict → wire projection — `verdict` events and Status can never disagree on shape. */
 const verdictWire = (v: Verdict): VerdictWire => ({ ok: v.ok, impossible: v.ok ? false : v.impossible, reason: v.reason })
 
-function assertFreshable(paths: LoopPaths): void {
-  if (resolve(paths.workspaceDir) === resolve(paths.root)) {
+export function assertFreshable(paths: Pick<LoopPaths, "root" | "workspaceDir">): void {
+  const root = resolve(paths.root)
+  const workspace = resolve(paths.workspaceDir)
+  const fromWorkspaceToRoot = relative(workspace, root)
+  const workspaceContainsRoot =
+    fromWorkspaceToRoot === "" ||
+    (fromWorkspaceToRoot !== ".." && !fromWorkspaceToRoot.startsWith(`..${sep}`) && !isAbsolute(fromWorkspaceToRoot))
+
+  if (!workspaceContainsRoot) return
+  if (fromWorkspaceToRoot === "") {
     throw new Error("loop: refusing `fresh` when workspace is the project root — 'clear' has no safe meaning")
   }
+  throw new Error("loop: refusing `fresh` when workspace contains the project root — recursive clear would delete the project")
 }
 
 function applyFresh(paths: LoopPaths): void {
